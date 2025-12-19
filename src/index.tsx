@@ -45,7 +45,7 @@ const TRANSLATIONS = {
         "modal.settings.advanced": "高级药代参数校准",
         "modal.settings.advanced_desc": "⚠️ 仅供高级用户使用。修改这些参数会改变模拟曲线的形状与峰值。",
         "modal.labs.title": "验血数据校准",
-        "modal.labs.desc": "输入你的验血结果（E2），算法将自动校准曲线高度。建议输入近期的测定值。",
+        "modal.labs.desc": "输入你的验血结果（E2），算法会自动根据当时的用药方案，计算各途径的校准因子。无需手动指定给药方式。",
         "modal.labs.add": "添加验血记录",
         "modal.labs.empty": "暂无验血数据",
         "field.lab_val": "测得数值 (pg/mL)",
@@ -113,7 +113,7 @@ const TRANSLATIONS = {
         "modal.settings.advanced": "Advanced PK Calibration",
         "modal.settings.advanced_desc": "⚠️ For advanced users only. Changing these will alter the simulation curve shape and peaks.",
         "modal.labs.title": "Lab Results Calibration",
-        "modal.labs.desc": "Enter your blood test results (E2). The algorithm will auto-calibrate the curve height. Recent data is recommended.",
+        "modal.labs.desc": "Enter your blood test results (E2). The algorithm automatically attributes results to active routes based on your history.",
         "modal.labs.add": "Add Lab Result",
         "modal.labs.empty": "No lab data yet",
         "field.lab_val": "Measured Level (pg/mL)",
@@ -1024,6 +1024,7 @@ const ResultChart = ({ sim, labs }: { sim: SimulationResult | null, labs: LabRes
                         <Area type="monotone" dataKey="conc" stroke="#ec4899" strokeWidth={3} fillOpacity={1} fill="url(#colorConc)" activeDot={{ r: 6, strokeWidth: 0 }} />
                         <Scatter 
                             data={labData} 
+                            dataKey="conc"
                             fill="#3b82f6" 
                             shape="circle"
                         >
