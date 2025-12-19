@@ -60,8 +60,8 @@ const TRANSLATIONS = {
         "modal.dose.edit_title": "编辑用药",
 
         "ref.title": "参考指标 (pg/mL)",
-        "ref.follicular": "雌二醇（卵泡期）",
-        "ref.luteal": "雌二醇（黄体期）",
+        "ref.follicular": "雌二醇（女性卵泡期）",
+        "ref.luteal": "雌二醇（女性黄体期）",
         "ref.male": "雌二醇（男性）",
         "btn.converter": "激素单位转换器",
 
@@ -772,9 +772,6 @@ const DoseFormModal = ({ isOpen, onClose, eventToEdit, onSave }: any) => {
                                                 <span>{t('sl.mode.casual')}</span>
                                                 <span>{t('sl.mode.standard')}</span>
                                                 <span>{t('sl.mode.strict')}</span>
-                                            </div>
-                                            <div className="text-xs text-teal-600 bg-white/50 p-2 rounded-lg">
-                                                Absorption $\theta \approx {currentTheta}$
                                             </div>
                                         </div>
                                     ) : (
