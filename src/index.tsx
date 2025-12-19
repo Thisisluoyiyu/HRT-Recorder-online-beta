@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, createContext, useContext, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +12,7 @@ import {
 import {
     DoseEvent, Route, Ester, ExtraKey, SimulationResult,
     runSimulation, interpolateConcentration, getToE2Factor, EsterInfo, SublingualTierParams, CorePK, SL_TIER_ORDER
-} from './logic.ts';
+} from './logic';
 
 // --- Localization ---
 
