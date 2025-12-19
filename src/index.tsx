@@ -1010,28 +1010,13 @@ const ResultChart = ({ sim, labs }: { sim: SimulationResult | null, labs: LabRes
                         />
                         <Tooltip 
                             labelFormatter={(ms) => `${formatDate(new Date(ms), lang)} ${formatTime(new Date(ms))}`}
-                            formatter={(value: number, name: string, props: any) => {
-                                if (props && props.payload && props.payload.note !== undefined) {
-                                    return [value.toFixed(1) + " pg/mL", `${t('chart.tooltip.lab')}${props.payload.note ? ` (${props.payload.note})` : ''}`];
-                                }
-                                return [value.toFixed(1) + " pg/mL", t('chart.tooltip.conc')];
-                            }}
+                            formatter={(value: number) => [value.toFixed(1) + " pg/mL", t('chart.tooltip.conc')]}
                             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }}
                             itemStyle={{ color: '#ec4899', fontWeight: 'bold' }}
                             labelStyle={{ color: '#6b7280', marginBottom: '4px', fontSize: '12px' }}
                         />
                         <ReferenceLine x={now} stroke="#ef4444" strokeDasharray="3 3" label={{ value: t('chart.now'), fill: '#ef4444', fontSize: 10, position: 'insideTopLeft' }} />
                         <Area type="monotone" dataKey="conc" stroke="#ec4899" strokeWidth={3} fillOpacity={1} fill="url(#colorConc)" activeDot={{ r: 6, strokeWidth: 0 }} />
-                        <Scatter 
-                            data={labData} 
-                            dataKey="conc"
-                            fill="#3b82f6" 
-                            shape="circle"
-                        >
-                            {labData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill="#3b82f6" />
-                            ))}
-                        </Scatter>
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
