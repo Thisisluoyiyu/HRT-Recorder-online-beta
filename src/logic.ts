@@ -49,6 +49,13 @@ export interface PKSettings {
     depotK1Corr: number;
 }
 
+export interface LabResult {
+    id: string;
+    timeH: number;
+    concPGmL: number;
+    note?: string;
+}
+
 // --- Constants & Parameters (PKparameter.swift & PKcore.swift) ---
 
 export const CorePK: PKSettings = {
@@ -361,4 +368,135 @@ export function interpolateConcentration(sim: SimulationResult, hour: number): n
     if (t1 === t0) return c0;
     const ratio = (hour - t0) / (t1 - t0);
     return c0 + (c1 - c0) * ratio;
+}
+
+// --- Calibration Logic ---
+
+export function calculateCalibrationFactors(
+    events: DoseEvent[], 
+    labResults: LabResult[], 
+    bodyWeightKG: number, 
+    pkSettings: PKSettings = CorePK
+): CalibrationFactors {
+    if (events.length === 0 || labResults.length === 0) return {};
+
+    const sortedEvents = [...events].sort((a, b) => a.timeH - b.timeH);
+    const sortedLabs = [...labResults].sort((a, b) => a.timeH - b.timeH);
+    
+    // 1. Precompute models for all events (uncalibrated)
+    const models = sortedEvents
+        .filter(e => e.route !== Route.patchRemove)
+        .map(e => new PrecomputedEventModel(e, sortedEvents, pkSettings));
+
+    const plasmaVolumeML = pkSettings.vdPerKG * bodyWeightKG * 1000;
+
+    // Helper to get theoretical concentration at a specific time for a specific route
+    const getConcAt = (t: number, route?: Route) => {
+        let totalAmountMG = 0;
+        for (const m of models) {
+            if (route && m.route !== route) continue;
+            totalAmountMG += m.amount(t);
+        }
+        return (totalAmountMG * 1e9) / plasmaVolumeML;
+    };
+
+    // Store observed ratios for each route
+    // Structure: Route -> Array of { ratio, weight }
+    const observations: Record<string, { ratio: number, weight: number }[]> = {};
+
+    const nowH = new Date().getTime() / 3600000;
+
+    for (const lab of sortedLabs) {
+        const totalConc = getConcAt(lab.timeH);
+        
+        // Ignore if theoretical level is too low (avoid noise/division by zero)
+        if (totalConc < 5.0) continue;
+
+        const ratio = lab.concPGmL / totalConc;
+        
+        // Time Decay Weight: Newer data has higher weight
+        // Decay factor: 10% per day? Or just linear?
+        // Let's use a sigmoid-like or simple inverse decay.
+        // Weight = 1 / (1 + 0.05 * DaysOld)
+        const daysOld = Math.max(0, (nowH - lab.timeH) / 24.0);
+        const timeWeight = 1.0 / (1.0 + 0.05 * daysOld);
+
+        // Attribute this ratio to active routes
+        // We weight the attribution by how much that route contributed to the total
+        const activeRoutes = new Set(models.map(m => m.route));
+        
+        for (const route of activeRoutes) {
+            const routeConc = getConcAt(lab.timeH, route);
+            const contribution = routeConc / totalConc;
+
+            // Only consider routes that contribute significantly (> 10%)
+            if (contribution > 0.1) {
+                if (!observations[route]) observations[route] = [];
+                
+                // The weight for this observation for this route is:
+                // TimeWeight * Contribution
+                // This means if Oral contributed 90% and Injection 10%, 
+                // this lab result heavily influences Oral calibration, but barely affects Injection.
+                observations[route].push({ 
+                    ratio: ratio, 
+                    weight: timeWeight * contribution 
+                });
+            }
+        }
+    }
+
+    const factors: CalibrationFactors = {};
+
+    // Aggregate observations per route
+    for (const route in observations) {
+        const obs = observations[route];
+        if (obs.length === 0) continue;
+
+        // 1. Calculate Weighted Mean
+        let sumW = 0;
+        let sumVal = 0;
+        for (const o of obs) {
+            sumVal += o.ratio * o.weight;
+            sumW += o.weight;
+        }
+        let weightedMean = sumVal / sumW;
+
+        // 2. Outlier Detection (only if we have enough data points, e.g. > 2)
+        // If we have multiple points, filter out those that deviate significantly
+        if (obs.length > 2) {
+            // Calculate Weighted Variance
+            let sumVar = 0;
+            for (const o of obs) {
+                sumVar += o.weight * Math.pow(o.ratio - weightedMean, 2);
+            }
+            // Weighted Standard Deviation
+            // Note: This is a simplified estimation
+            const weightedStdDev = Math.sqrt(sumVar / sumW);
+
+            // Re-calculate mean excluding outliers (> 2 sigma)
+            // But ensure we don't exclude everything.
+            let sumW_clean = 0;
+            let sumVal_clean = 0;
+            let count_clean = 0;
+
+            for (const o of obs) {
+                const zScore = Math.abs(o.ratio - weightedMean) / (weightedStdDev + 1e-6);
+                if (zScore <= 2.0) {
+                    sumVal_clean += o.ratio * o.weight;
+                    sumW_clean += o.weight;
+                    count_clean++;
+                }
+            }
+
+            if (count_clean > 0) {
+                weightedMean = sumVal_clean / sumW_clean;
+            }
+        }
+
+        // 3. Apply limits (Safety)
+        // Don't let factor go too wild (e.g. 0.1x to 5.0x)
+        factors[route as Route] = Math.max(0.1, Math.min(5.0, weightedMean));
+    }
+
+    return factors;
 }

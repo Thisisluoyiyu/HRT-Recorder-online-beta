@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, createContext, useContext, useRef 
 import { createRoot } from 'react-dom/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart, Scatter, Cell
 } from 'recharts';
 import { 
     Plus, Trash2, Syringe, Pill, Droplet, Sticker, X, 
@@ -10,8 +10,8 @@ import {
     Activity, Info, ZoomIn, RotateCcw
 } from 'lucide-react';
 import {
-    DoseEvent, Route, Ester, ExtraKey, SimulationResult, PKSettings,
-    runSimulation, interpolateConcentration, getToE2Factor, EsterInfo, SublingualTierParams, CorePK, SL_TIER_ORDER
+    DoseEvent, Route, Ester, ExtraKey, SimulationResult, PKSettings, LabResult,
+    runSimulation, interpolateConcentration, getToE2Factor, EsterInfo, SublingualTierParams, CorePK, SL_TIER_ORDER, calculateCalibrationFactors
 } from './logic';
 
 // --- Localization ---
@@ -25,6 +25,7 @@ const TRANSLATIONS = {
         "status.weight": "体重",
         "chart.title": "雌二醇浓度 (pg/mL)",
         "chart.tooltip.conc": "浓度",
+        "chart.tooltip.lab": "验血结果",
         "chart.tooltip.time": "时间",
         "chart.now": "现在",
         "chart.reset": "重置缩放",
@@ -43,6 +44,12 @@ const TRANSLATIONS = {
         "modal.settings.weight": "体重 (kg)",
         "modal.settings.advanced": "高级药代参数校准",
         "modal.settings.advanced_desc": "⚠️ 仅供高级用户使用。修改这些参数会改变模拟曲线的形状与峰值。",
+        "modal.labs.title": "验血数据校准",
+        "modal.labs.desc": "输入你的验血结果（E2），算法将自动校准曲线高度。建议输入近期的测定值。",
+        "modal.labs.add": "添加验血记录",
+        "modal.labs.empty": "暂无验血数据",
+        "field.lab_val": "测得数值 (pg/mL)",
+        "field.lab_note": "备注 (可选)",
         "param.vd": "分布容积系数 (Vd/kg)",
         "param.kClear": "清除速率 (kClear)",
         "param.kClearInj": "注射清除速率 (kClearInj)",
@@ -86,6 +93,7 @@ const TRANSLATIONS = {
         "status.weight": "Weight",
         "chart.title": "Estradiol Concentration (pg/mL)",
         "chart.tooltip.conc": "Conc.",
+        "chart.tooltip.lab": "Lab Result",
         "chart.tooltip.time": "Time",
         "chart.now": "NOW",
         "chart.reset": "Reset Zoom",
@@ -104,6 +112,12 @@ const TRANSLATIONS = {
         "modal.settings.weight": "Body Weight (kg)",
         "modal.settings.advanced": "Advanced PK Calibration",
         "modal.settings.advanced_desc": "⚠️ For advanced users only. Changing these will alter the simulation curve shape and peaks.",
+        "modal.labs.title": "Lab Results Calibration",
+        "modal.labs.desc": "Enter your blood test results (E2). The algorithm will auto-calibrate the curve height. Recent data is recommended.",
+        "modal.labs.add": "Add Lab Result",
+        "modal.labs.empty": "No lab data yet",
+        "field.lab_val": "Measured Level (pg/mL)",
+        "field.lab_note": "Note (Optional)",
         "param.vd": "Volume of Dist. (Vd/kg)",
         "param.kClear": "Clearance Rate (kClear)",
         "param.kClearInj": "Inj. Clearance (kClearInj)",
@@ -193,7 +207,142 @@ const getRouteIcon = (route: Route) => {
 
 // --- Components ---
 
-const SettingsModal = ({ isOpen, onClose, currentWeight, onSaveWeight, currentPK, onSavePK }: any) => {
+const LabResultModal = ({ isOpen, onClose, labs, onSaveLabs }: any) => {
+    const { t } = useTranslation();
+    const [isAdding, setIsAdding] = useState(false);
+    
+    // New Lab Form
+    const [dateStr, setDateStr] = useState("");
+    const [valStr, setValStr] = useState("");
+    const [note, setNote] = useState("");
+
+    useEffect(() => {
+        if (isOpen && !isAdding) {
+            const now = new Date();
+            const iso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+            setDateStr(iso);
+            setValStr("");
+            setNote("");
+        }
+    }, [isOpen, isAdding]);
+
+    const handleAdd = () => {
+        const timeH = new Date(dateStr).getTime() / 3600000;
+        const conc = parseFloat(valStr);
+        if (isNaN(conc) || conc <= 0) return;
+
+        const newLab: LabResult = {
+            id: uuidv4(),
+            timeH,
+            concPGmL: conc,
+            note
+        };
+        onSaveLabs([...labs, newLab]);
+        setIsAdding(false);
+    };
+
+    const handleDelete = (id: string) => {
+        if (confirm(t('timeline.delete_confirm'))) {
+            onSaveLabs(labs.filter((l: LabResult) => l.id !== id));
+        }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto flex flex-col">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-3xl">
+                    <h3 className="text-xl font-bold text-gray-900">{t('modal.labs.title')}</h3>
+                    <button onClick={onClose} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition">
+                        <X size={20} className="text-gray-500" />
+                    </button>
+                </div>
+
+                <div className="p-6 flex-1 overflow-y-auto">
+                    {!isAdding ? (
+                        <div className="space-y-6">
+                            <div className="bg-blue-50 p-4 rounded-xl flex gap-3 items-start">
+                                <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-700 leading-relaxed">
+                                    {t('modal.labs.desc')}
+                                </p>
+                            </div>
+
+                            <button 
+                                onClick={() => setIsAdding(true)}
+                                className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-bold hover:border-pink-400 hover:text-pink-500 hover:bg-pink-50 transition flex items-center justify-center gap-2"
+                            >
+                                <Plus size={20} /> {t('modal.labs.add')}
+                            </button>
+
+                            <div className="space-y-3">
+                                {labs.length === 0 && (
+                                    <div className="text-center text-gray-400 text-sm py-4">{t('modal.labs.empty')}</div>
+                                )}
+                                {[...labs].sort((a: LabResult, b: LabResult) => b.timeH - a.timeH).map((lab: LabResult) => (
+                                    <div key={lab.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                        <div>
+                                            <div className="flex items-baseline gap-2">
+                                                <span className="text-lg font-black text-gray-900">{lab.concPGmL}</span>
+                                                <span className="text-xs font-bold text-gray-400">pg/mL</span>
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                {formatDate(new Date(lab.timeH * 3600000), 'en')} {formatTime(new Date(lab.timeH * 3600000))}
+                                                {lab.note && <span className="ml-2 text-gray-400">• {lab.note}</span>}
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleDelete(lab.id)} className="p-2 text-gray-400 hover:text-red-500 transition">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-700">{t('field.time')}</label>
+                                <input 
+                                    type="datetime-local" 
+                                    value={dateStr} 
+                                    onChange={e => setDateStr(e.target.value)} 
+                                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 outline-none font-medium"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-700">{t('field.lab_val')}</label>
+                                <input 
+                                    type="number" inputMode="decimal"
+                                    value={valStr} 
+                                    onChange={e => setValStr(e.target.value)} 
+                                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 outline-none font-mono text-lg"
+                                    placeholder="0.0"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-700">{t('field.lab_note')}</label>
+                                <input 
+                                    type="text" 
+                                    value={note} 
+                                    onChange={e => setNote(e.target.value)} 
+                                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 outline-none"
+                                    placeholder="..."
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                                <button onClick={() => setIsAdding(false)} className="flex-1 py-3.5 text-gray-600 font-bold bg-gray-100 rounded-xl hover:bg-gray-200 transition">{t('btn.cancel')}</button>
+                                <button onClick={handleAdd} className="flex-1 py-3.5 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 shadow-lg shadow-pink-200 transition">{t('btn.save')}</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SettingsModal = ({ isOpen, onClose, currentWeight, onSaveWeight, currentPK, onSavePK, onOpenLabs }: any) => {
     const { t } = useTranslation();
     const [weight, setWeight] = useState(currentWeight);
     const [pk, setPk] = useState<PKSettings>(currentPK);
@@ -244,6 +393,16 @@ const SettingsModal = ({ isOpen, onClose, currentWeight, onSaveWeight, currentPK
                             {t('modal.weight.desc')}
                         </p>
                     </div>
+                </div>
+
+                {/* Lab Results Button */}
+                <div className="mb-6">
+                    <button 
+                        onClick={() => { onClose(); onOpenLabs(); }}
+                        className="w-full py-4 bg-indigo-50 text-indigo-600 font-bold rounded-xl hover:bg-indigo-100 transition flex items-center justify-center gap-2"
+                    >
+                        <Activity size={20} /> {t('modal.labs.title')}
+                    </button>
                 </div>
 
                 {/* Advanced Toggle */}
@@ -630,7 +789,7 @@ const DoseFormModal = ({ isOpen, onClose, eventToEdit, onSave }: any) => {
     );
 };
 
-const ResultChart = ({ sim }: { sim: SimulationResult | null }) => {
+const ResultChart = ({ sim, labs }: { sim: SimulationResult | null, labs: LabResult[] }) => {
     const { t, lang } = useTranslation();
     const containerRef = useRef<HTMLDivElement>(null);
     const [xDomain, setXDomain] = useState<[number, number] | null>(null);
@@ -647,6 +806,16 @@ const ResultChart = ({ sim }: { sim: SimulationResult | null }) => {
             conc: sim.concPGmL[i]
         }));
     }, [sim]);
+
+    // Prepare lab data for ReferenceDots
+    // We need to ensure they are within the domain if we want to be strict, but Recharts handles it.
+    const labData = useMemo(() => {
+        return labs.map(l => ({
+            time: l.timeH * 3600000,
+            conc: l.concPGmL,
+            note: l.note
+        }));
+    }, [labs]);
 
     // Update domain when data loads, only if not zoomed
     useEffect(() => {
@@ -841,13 +1010,27 @@ const ResultChart = ({ sim }: { sim: SimulationResult | null }) => {
                         />
                         <Tooltip 
                             labelFormatter={(ms) => `${formatDate(new Date(ms), lang)} ${formatTime(new Date(ms))}`}
-                            formatter={(value: number) => [value.toFixed(1) + " pg/mL", t('chart.tooltip.conc')]}
+                            formatter={(value: number, name: string, props: any) => {
+                                if (props && props.payload && props.payload.note !== undefined) {
+                                    return [value.toFixed(1) + " pg/mL", `${t('chart.tooltip.lab')}${props.payload.note ? ` (${props.payload.note})` : ''}`];
+                                }
+                                return [value.toFixed(1) + " pg/mL", t('chart.tooltip.conc')];
+                            }}
                             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }}
                             itemStyle={{ color: '#ec4899', fontWeight: 'bold' }}
                             labelStyle={{ color: '#6b7280', marginBottom: '4px', fontSize: '12px' }}
                         />
                         <ReferenceLine x={now} stroke="#ef4444" strokeDasharray="3 3" label={{ value: t('chart.now'), fill: '#ef4444', fontSize: 10, position: 'insideTopLeft' }} />
                         <Area type="monotone" dataKey="conc" stroke="#ec4899" strokeWidth={3} fillOpacity={1} fill="url(#colorConc)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                        <Scatter 
+                            data={labData} 
+                            fill="#3b82f6" 
+                            shape="circle"
+                        >
+                            {labData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill="#3b82f6" />
+                            ))}
+                        </Scatter>
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
@@ -877,17 +1060,23 @@ const AppContent = () => {
         const saved = localStorage.getItem('hrt-pk-settings');
         return saved ? JSON.parse(saved) : CorePK;
     });
+    const [labResults, setLabResults] = useState<LabResult[]>(() => {
+        const saved = localStorage.getItem('hrt-labs');
+        return saved ? JSON.parse(saved) : [];
+    });
 
     const [simulation, setSimulation] = useState<SimulationResult | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isLabsOpen, setIsLabsOpen] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingEvent, setEditingEvent] = useState<DoseEvent | null>(null);
 
     useEffect(() => { localStorage.setItem('hrt-events', JSON.stringify(events)); }, [events]);
     useEffect(() => { localStorage.setItem('hrt-weight', weight.toString()); }, [weight]);
     useEffect(() => { localStorage.setItem('hrt-pk-settings', JSON.stringify(pkSettings)); }, [pkSettings]);
+    useEffect(() => { localStorage.setItem('hrt-labs', JSON.stringify(labResults)); }, [labResults]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -896,12 +1085,14 @@ const AppContent = () => {
 
     useEffect(() => {
         if (events.length > 0) {
-            const res = runSimulation(events, weight, undefined, pkSettings);
+            // Calculate calibration factors based on lab results
+            const factors = calculateCalibrationFactors(events, labResults, weight, pkSettings);
+            const res = runSimulation(events, weight, factors, pkSettings);
             setSimulation(res);
         } else {
             setSimulation(null);
         }
-    }, [events, weight, pkSettings]);
+    }, [events, weight, pkSettings, labResults]);
 
     const currentLevel = useMemo(() => {
         if (!simulation) return 0;
@@ -979,7 +1170,7 @@ const AppContent = () => {
 
             <main className="px-6 py-8 space-y-8">
                 {/* Chart */}
-                <ResultChart sim={simulation} />
+                <ResultChart sim={simulation} labs={labResults} />
 
                 {/* Timeline */}
                 <div className="space-y-6">
@@ -1067,6 +1258,14 @@ const AppContent = () => {
                 onSaveWeight={setWeight}
                 currentPK={pkSettings}
                 onSavePK={setPkSettings}
+                onOpenLabs={() => setIsLabsOpen(true)}
+            />
+
+            <LabResultModal
+                isOpen={isLabsOpen}
+                onClose={() => setIsLabsOpen(false)}
+                labs={labResults}
+                onSaveLabs={setLabResults}
             />
             
             <DoseFormModal 
