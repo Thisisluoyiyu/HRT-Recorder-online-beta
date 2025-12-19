@@ -21,7 +21,12 @@ export default defineConfig(({ mode }) => {
         }
       },
       build: {
-        chunkSizeWarningLimit: 1000
+        chunkSizeWarningLimit: 1000,
+        rollupOptions: {
+            input: {
+                main: path.resolve(__dirname, 'index.html'),
+            },
+        },
       }
     };
 });
