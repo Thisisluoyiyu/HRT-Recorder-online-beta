@@ -23,6 +23,8 @@ const TRANSLATIONS = {
         "app.title": "🏳️‍⚧HRT在线模拟记录🍥",
         "status.estimate": "当前估算浓度",
         "status.weight": "体重",
+        "status.calibrated": "已校准",
+        "status.calibrate_now": "添加验血校准",
         "chart.title": "雌二醇浓度 (pg/mL)",
         "chart.tooltip.conc": "浓度",
         "chart.tooltip.lab": "验血结果",
@@ -56,6 +58,12 @@ const TRANSLATIONS = {
         "param.k1Corr": "注射吸收校正 (k1Corr)",
         "modal.dose.add_title": "新增用药",
         "modal.dose.edit_title": "编辑用药",
+
+        "ref.title": "参考指标 (pg/mL)",
+        "ref.follicular": "雌二醇（卵泡期）",
+        "ref.luteal": "雌二醇（黄体期）",
+        "ref.male": "雌二醇（男性）",
+        "btn.converter": "激素单位转换器",
 
         "field.time": "给药时间",
         "field.route": "给药途径",
@@ -91,6 +99,8 @@ const TRANSLATIONS = {
         "app.title": "🏳️‍⚧HRT Recorder🍥",
         "status.estimate": "Current Estimate",
         "status.weight": "Weight",
+        "status.calibrated": "Calibrated",
+        "status.calibrate_now": "Add Lab Data",
         "chart.title": "Estradiol Concentration (pg/mL)",
         "chart.tooltip.conc": "Conc.",
         "chart.tooltip.lab": "Lab Result",
@@ -124,6 +134,12 @@ const TRANSLATIONS = {
         "param.k1Corr": "Inj. Absorption Corr. (k1Corr)",
         "modal.dose.add_title": "Add Dose",
         "modal.dose.edit_title": "Edit Dose",
+
+        "ref.title": "Reference Ranges (pg/mL)",
+        "ref.follicular": "Estradiol (Follicular)",
+        "ref.luteal": "Estradiol (Luteal)",
+        "ref.male": "Estradiol (Male)",
+        "btn.converter": "Hormone Unit Converter",
 
         "field.time": "Time",
         "field.route": "Route",
@@ -1146,10 +1162,22 @@ const AppContent = () => {
                         </button>
                     </div>
                 </div>
-                <div className="flex gap-4">
-                     <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 bg-gray-50 pl-3 pr-4 py-2 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-100 transition">
+                <div className="flex gap-4 overflow-x-auto pb-2 -mb-2 scrollbar-hide">
+                     <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 bg-gray-50 pl-3 pr-4 py-2 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-100 transition whitespace-nowrap shrink-0">
                         <Settings size={16} className="text-gray-400" />
                         {t('status.weight')}: {weight} kg
+                    </button>
+
+                    <button 
+                        onClick={() => setIsLabsOpen(true)}
+                        className={`flex items-center gap-2 pl-3 pr-4 py-2 rounded-full text-sm font-bold transition whitespace-nowrap shrink-0 ${
+                            labResults.length > 0 
+                            ? "bg-blue-50 text-blue-600 hover:bg-blue-100 ring-1 ring-blue-200" 
+                            : "bg-pink-50 text-pink-600 hover:bg-pink-100 ring-1 ring-pink-200 animate-pulse"
+                        }`}
+                    >
+                        <Activity size={16} className={labResults.length > 0 ? "text-blue-500" : "text-pink-500"} />
+                        {labResults.length > 0 ? t('status.calibrated') : t('status.calibrate_now')}
                     </button>
                 </div>
             </header>
@@ -1221,6 +1249,35 @@ const AppContent = () => {
                             </div>
                         </div>
                     ))}
+                </div>
+
+                {/* Reference Ranges */}
+                <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{t('ref.title')}</h3>
+                        <a 
+                            href="https://mtf.wiki/zh-cn/converter" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-xs font-bold text-pink-500 hover:text-pink-600 flex items-center gap-1 bg-pink-50 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                            {t('btn.converter')} <ChevronDown className="-rotate-90" size={12} />
+                        </a>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                            <span className="text-sm font-medium text-gray-600">{t('ref.follicular')}</span>
+                            <span className="font-mono font-bold text-gray-900">30 – 100</span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                            <span className="text-sm font-medium text-gray-600">{t('ref.luteal')}</span>
+                            <span className="font-mono font-bold text-gray-900">70 – 300</span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                            <span className="text-sm font-medium text-gray-600">{t('ref.male')}</span>
+                            <span className="font-mono font-bold text-gray-900">8 – 35</span>
+                        </div>
+                    </div>
                 </div>
             </main>
 
