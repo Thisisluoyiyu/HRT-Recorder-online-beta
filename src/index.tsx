@@ -10,7 +10,7 @@ import {
     Activity, Info, ZoomIn, RotateCcw
 } from 'lucide-react';
 import {
-    DoseEvent, Route, Ester, ExtraKey, SimulationResult,
+    DoseEvent, Route, Ester, ExtraKey, SimulationResult, PKSettings,
     runSimulation, interpolateConcentration, getToE2Factor, EsterInfo, SublingualTierParams, CorePK, SL_TIER_ORDER
 } from './logic';
 
@@ -39,6 +39,14 @@ const TRANSLATIONS = {
 
         "modal.weight.title": "设置体重",
         "modal.weight.desc": "体重用于计算分布容积 ($V_d \\approx 2.0 L/kg$)，直接影响血药浓度的峰值估算。",
+        "modal.settings.title": "个人参数设置",
+        "modal.settings.weight": "体重 (kg)",
+        "modal.settings.advanced": "高级药代参数校准",
+        "modal.settings.advanced_desc": "⚠️ 仅供高级用户使用。修改这些参数会改变模拟曲线的形状与峰值。",
+        "param.vd": "分布容积系数 (Vd/kg)",
+        "param.kClear": "清除速率 (kClear)",
+        "param.kClearInj": "注射清除速率 (kClearInj)",
+        "param.k1Corr": "注射吸收校正 (k1Corr)",
         "modal.dose.add_title": "新增用药",
         "modal.dose.edit_title": "编辑用药",
 
@@ -92,6 +100,14 @@ const TRANSLATIONS = {
 
         "modal.weight.title": "Body Weight",
         "modal.weight.desc": "Weight is used to calculate volume of distribution ($V_d \\approx 2.0 L/kg$), affecting peak concentration estimates.",
+        "modal.settings.title": "Personal Settings",
+        "modal.settings.weight": "Body Weight (kg)",
+        "modal.settings.advanced": "Advanced PK Calibration",
+        "modal.settings.advanced_desc": "⚠️ For advanced users only. Changing these will alter the simulation curve shape and peaks.",
+        "param.vd": "Volume of Dist. (Vd/kg)",
+        "param.kClear": "Clearance Rate (kClear)",
+        "param.kClearInj": "Inj. Clearance (kClearInj)",
+        "param.k1Corr": "Inj. Absorption Corr. (k1Corr)",
         "modal.dose.add_title": "Add Dose",
         "modal.dose.edit_title": "Edit Dose",
 
@@ -177,39 +193,107 @@ const getRouteIcon = (route: Route) => {
 
 // --- Components ---
 
-const WeightEditorModal = ({ isOpen, onClose, currentWeight, onSave }: any) => {
+const SettingsModal = ({ isOpen, onClose, currentWeight, onSaveWeight, currentPK, onSavePK }: any) => {
     const { t } = useTranslation();
     const [weight, setWeight] = useState(currentWeight);
+    const [pk, setPk] = useState<PKSettings>(currentPK);
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
-    useEffect(() => setWeight(currentWeight), [currentWeight, isOpen]);
+    useEffect(() => {
+        setWeight(currentWeight);
+        setPk(currentPK);
+    }, [currentWeight, currentPK, isOpen]);
+
+    const handlePkChange = (key: keyof PKSettings, val: string) => {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+            setPk(prev => ({ ...prev, [key]: num }));
+        }
+    };
+
+    const handleSave = () => {
+        onSaveWeight(weight);
+        onSavePK(pk);
+        onClose();
+    };
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">{t('modal.weight.title')}</h3>
-                <div className="flex items-center justify-between mb-8 px-4">
-                    <button onClick={() => setWeight((w: number) => Math.max(30, Number((w - 0.5).toFixed(1))))} className="p-4 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
-                        <ChevronDown size={24} />
-                    </button>
-                    <div className="text-center">
-                        <div className="text-5xl font-black text-pink-500 tabular-nums">{weight.toFixed(1)}</div>
-                        <div className="text-sm font-medium text-gray-400 mt-1">kg</div>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 transform transition-all scale-100">
+                <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">{t('modal.settings.title')}</h3>
+                
+                {/* Weight Section */}
+                <div className="mb-8">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">{t('modal.settings.weight')}</label>
+                    <div className="flex items-center justify-between px-2">
+                        <button onClick={() => setWeight((w: number) => Math.max(30, Number((w - 0.5).toFixed(1))))} className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
+                            <ChevronDown size={20} />
+                        </button>
+                        <div className="text-center">
+                            <div className="text-4xl font-black text-pink-500 tabular-nums">{weight.toFixed(1)}</div>
+                        </div>
+                        <button onClick={() => setWeight((w: number) => Math.min(200, Number((w + 0.5).toFixed(1))))} className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
+                            <ChevronUp size={20} />
+                        </button>
                     </div>
-                    <button onClick={() => setWeight((w: number) => Math.min(200, Number((w + 0.5).toFixed(1))))} className="p-4 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
-                        <ChevronUp size={24} />
+                    <div className="bg-blue-50 p-3 rounded-xl mt-4 flex gap-2 items-start">
+                        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-blue-700 leading-relaxed">
+                            {t('modal.weight.desc')}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Advanced Toggle */}
+                <div className="mb-6">
+                    <button 
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="w-full py-2 px-4 bg-gray-50 hover:bg-gray-100 rounded-xl text-xs font-bold text-gray-500 flex items-center justify-center gap-2 transition-colors"
+                    >
+                        {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        {t('modal.settings.advanced')}
                     </button>
+
+                    {showAdvanced && (
+                        <div className="mt-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                            <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100 text-xs text-yellow-700 mb-4">
+                                {t('modal.settings.advanced_desc')}
+                            </div>
+                            
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">{t('param.vd')}</label>
+                                    <input type="number" step="0.1" value={pk.vdPerKG} onChange={e => handlePkChange('vdPerKG', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">{t('param.kClear')}</label>
+                                    <input type="number" step="0.01" value={pk.kClear} onChange={e => handlePkChange('kClear', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">{t('param.kClearInj')}</label>
+                                    <input type="number" step="0.01" value={pk.kClearInjection} onChange={e => handlePkChange('kClearInjection', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">{t('param.k1Corr')}</label>
+                                    <input type="number" step="0.1" value={pk.depotK1Corr} onChange={e => handlePkChange('depotK1Corr', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono" />
+                                </div>
+                            </div>
+                            
+                            <button 
+                                onClick={() => setPk(CorePK)}
+                                className="w-full py-2 text-xs font-bold text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                            >
+                                {t('chart.reset')} (Default)
+                            </button>
+                        </div>
+                    )}
                 </div>
-                <div className="bg-blue-50 p-4 rounded-xl mb-6 flex gap-3 items-start">
-                    <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-blue-700 leading-relaxed">
-                        {t('modal.weight.desc')}
-                    </p>
-                </div>
+
                 <div className="flex gap-3">
                     <button onClick={onClose} className="flex-1 py-3.5 text-gray-600 font-bold bg-gray-100 rounded-xl hover:bg-gray-200 transition">{t('btn.cancel')}</button>
-                    <button onClick={() => { onSave(weight); onClose(); }} className="flex-1 py-3.5 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 shadow-lg shadow-pink-200 transition">{t('btn.save')}</button>
+                    <button onClick={handleSave} className="flex-1 py-3.5 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 shadow-lg shadow-pink-200 transition">{t('btn.save')}</button>
                 </div>
             </div>
         </div>
@@ -789,16 +873,21 @@ const AppContent = () => {
         const saved = localStorage.getItem('hrt-weight');
         return saved ? parseFloat(saved) : 60.0;
     });
+    const [pkSettings, setPkSettings] = useState<PKSettings>(() => {
+        const saved = localStorage.getItem('hrt-pk-settings');
+        return saved ? JSON.parse(saved) : CorePK;
+    });
 
     const [simulation, setSimulation] = useState<SimulationResult | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
 
-    const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingEvent, setEditingEvent] = useState<DoseEvent | null>(null);
 
     useEffect(() => { localStorage.setItem('hrt-events', JSON.stringify(events)); }, [events]);
     useEffect(() => { localStorage.setItem('hrt-weight', weight.toString()); }, [weight]);
+    useEffect(() => { localStorage.setItem('hrt-pk-settings', JSON.stringify(pkSettings)); }, [pkSettings]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -807,12 +896,12 @@ const AppContent = () => {
 
     useEffect(() => {
         if (events.length > 0) {
-            const res = runSimulation(events, weight);
+            const res = runSimulation(events, weight, undefined, pkSettings);
             setSimulation(res);
         } else {
             setSimulation(null);
         }
-    }, [events, weight]);
+    }, [events, weight, pkSettings]);
 
     const currentLevel = useMemo(() => {
         if (!simulation) return 0;
@@ -881,7 +970,7 @@ const AppContent = () => {
                     </div>
                 </div>
                 <div className="flex gap-4">
-                     <button onClick={() => setIsWeightModalOpen(true)} className="flex items-center gap-2 bg-gray-50 pl-3 pr-4 py-2 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-100 transition">
+                     <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 bg-gray-50 pl-3 pr-4 py-2 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-100 transition">
                         <Settings size={16} className="text-gray-400" />
                         {t('status.weight')}: {weight} kg
                     </button>
@@ -971,11 +1060,13 @@ const AppContent = () => {
                 </button>
             </div>
 
-            <WeightEditorModal 
-                isOpen={isWeightModalOpen} 
-                onClose={() => setIsWeightModalOpen(false)} 
+            <SettingsModal 
+                isOpen={isSettingsOpen} 
+                onClose={() => setIsSettingsOpen(false)} 
                 currentWeight={weight} 
-                onSave={setWeight} 
+                onSaveWeight={setWeight}
+                currentPK={pkSettings}
+                onSavePK={setPkSettings}
             />
             
             <DoseFormModal 
@@ -997,5 +1088,3 @@ const App = () => (
 const container = document.getElementById('root');
 const root = createRoot(container!);
 root.render(<App />);
-
-<script type="module" src="src/index.tsx"></script>

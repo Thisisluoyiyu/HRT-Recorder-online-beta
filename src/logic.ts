@@ -42,12 +42,19 @@ export interface SimulationResult {
 
 export type CalibrationFactors = Partial<Record<Route, number>>;
 
+export interface PKSettings {
+    vdPerKG: number;
+    kClear: number;
+    kClearInjection: number;
+    depotK1Corr: number;
+}
+
 // --- Constants & Parameters (PKparameter.swift & PKcore.swift) ---
 
-export const CorePK = {
+export const CorePK: PKSettings = {
     vdPerKG: 2.0, // L/kg
     kClear: 0.41,
-    kClearInjection: 0.041,
+    kClearInjection: 0.05, // Fixed typo from 0.041 to match README 0.05
     depotK1Corr: 1.0
 };
 
@@ -109,12 +116,12 @@ interface PKParams {
     F_slow: number;
 }
 
-function resolveParams(event: DoseEvent): PKParams {
-    const k3 = event.route === Route.injection ? CorePK.kClearInjection : CorePK.kClear;
+function resolveParams(event: DoseEvent, pk: PKSettings = CorePK): PKParams {
+    const k3 = event.route === Route.injection ? pk.kClearInjection : pk.kClear;
 
     switch (event.route) {
         case Route.injection: {
-            const k1corr = CorePK.depotK1Corr;
+            const k1corr = pk.depotK1Corr;
             const k1_fast = (TwoPartDepotPK.k1_fast[event.ester] || 0) * k1corr;
             const k1_slow = (TwoPartDepotPK.k1_slow[event.ester] || 0) * k1corr;
             const fracFast = TwoPartDepotPK.Frac_fast[event.ester] || 1.0;
@@ -203,9 +210,9 @@ class PrecomputedEventModel {
     private model: (t: number) => number;
     public route: Route;
 
-    constructor(event: DoseEvent, allEvents: DoseEvent[]) {
+    constructor(event: DoseEvent, allEvents: DoseEvent[], pk: PKSettings = CorePK) {
         this.route = event.route;
-        const params = resolveParams(event);
+        const params = resolveParams(event, pk);
         const startTime = event.timeH;
         const dose = event.doseMG;
 
@@ -291,18 +298,18 @@ class PrecomputedEventModel {
 
 // --- Simulation Engine ---
 
-export function runSimulation(events: DoseEvent[], bodyWeightKG: number, calibrationFactors?: CalibrationFactors): SimulationResult | null {
+export function runSimulation(events: DoseEvent[], bodyWeightKG: number, calibrationFactors?: CalibrationFactors, pkSettings: PKSettings = CorePK): SimulationResult | null {
     if (events.length === 0) return null;
 
     const sortedEvents = [...events].sort((a, b) => a.timeH - b.timeH);
     const precomputed = sortedEvents
         .filter(e => e.route !== Route.patchRemove)
-        .map(e => new PrecomputedEventModel(e, sortedEvents));
+        .map(e => new PrecomputedEventModel(e, sortedEvents, pkSettings));
 
     const startTime = sortedEvents[0].timeH - 24;
     const endTime = sortedEvents[sortedEvents.length - 1].timeH + (24 * 14);
     const steps = 1000;
-    const plasmaVolumeML = CorePK.vdPerKG * bodyWeightKG * 1000;
+    const plasmaVolumeML = pkSettings.vdPerKG * bodyWeightKG * 1000;
 
     const timeH: number[] = [];
     const concPGmL: number[] = [];
